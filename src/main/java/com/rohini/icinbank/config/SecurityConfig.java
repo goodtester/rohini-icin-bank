@@ -45,7 +45,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
         http.headers().frameOptions().disable();
         http.csrf().disable()
             .authorizeRequests()
-            .antMatchers("/welcome", "/login", "/register", "/h2-console/**").permitAll()
+            .antMatchers("/status", "/welcome", "/login", "/register", "/h2-console/**").permitAll()
             .anyRequest().authenticated();
         
         http.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
