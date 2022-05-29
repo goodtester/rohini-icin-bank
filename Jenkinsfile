@@ -1,5 +1,8 @@
 pipeline {
     agent any
+    environment{
+        EC2_IP='ec2-user@ec2-54-82-72-210.compute-1.amazonaws.com'
+    }
     tools {
         maven "Maven 3.6.3"
     }
@@ -16,7 +19,7 @@ pipeline {
         }
         stage('Docker Image') {
             steps{
-                sh "docker build -t goodtester/rohini-icin-bank:${BUILD_NUMBER} ."
+                sh "docker build --platform=linux/amd64 -t goodtester/rohini-icin-bank:${BUILD_NUMBER} ."
             }
         }
         stage('Docker Push') {
@@ -29,12 +32,15 @@ pipeline {
         }
         stage("Deploy") {
             steps{
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'aws_configure', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
-                    sh "sudo docker stop rohini-icin-bank || echo 'no containers to stop'"
-                    sh "sudo docker rm rohini-icin-bank || echo 'no containers to remove'"
-                    sh "sudo docker rmi goodtester/rohini-icin-bank:${BUILD_NUMBER} || echo 'no images to delete'"
-                    sh "sudo docker pull goodtester/rohini-icin-bank:${BUILD_NUMBER}"
-                    sh "sudo docker run -d --name rohini-icin-bank -p 8989:8080 goodtester/rohini-icin-bank:${BUILD_NUMBER}"
+                sshagent (credentials: ['aws-ssh-key']) {
+                    withCredentials([usernamePassword(credentialsId: 'docker_credentials', passwordVariable: 'password', usernameVariable: 'username')]) {
+                        sh "ssh ${EC2_IP} docker login -u ${username} -p ${password}"
+                    }
+                    sh 'ssh ${EC2_IP}  docker stop rohini-icin-bank || echo "no containers to stop"'
+                    sh 'ssh ${EC2_IP}  docker rm rohini-icin-bank || echo "no containers to remove"'
+                    sh 'ssh ${EC2_IP}  docker rmi goodtester/rohini-icin-bank:${BUILD_NUMBER} || echo "no images to delete"'
+                    sh 'ssh ${EC2_IP}  docker pull goodtester/rohini-icin-bank:${BUILD_NUMBER}'
+                    sh 'ssh ${EC2_IP}  docker run -d --name rohini-icin-bank -p 8080:8080 goodtester/rohini-icin-bank:${BUILD_NUMBER}'
                 }
             }
         }
