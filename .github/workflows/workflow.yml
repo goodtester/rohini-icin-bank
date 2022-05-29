@@ -1,0 +1,64 @@
+name: Deploy to EC2
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: rohini-icin-bank
+  SERVICE_NAME: rohini-icin-bank
+  IMAGE_TAG: latest
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.version.outputs.ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  deploy:
+     name: Deploy to EC2
+     runs-on: ubuntu-latest
+     needs: build
+     steps:
+      - name: Deploy by executing remote ssh commands
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_SSH_HOST }}
+          port: 22
+          username: ${{ secrets.EC2_SSH_USERNAME }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            ECR_REGISTRY=${{ steps.version.outputs.ECR_REGISTRY }}
+            ECR_REPOSITORY=${{ env.ECR_REPOSITORY }}
+            SERVICE_NAME=${{ env.SERVICE_NAME }}
+            AWS_REGION=${{ env.AWS_REGION }}
+            
+            sudo docker stop $SERVICE_NAME || echo 'no containers to stop'
+            sudo docker rm $SERVICE_NAME || echo 'no containers to remove'
+            sudo docker rmi $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG || echo 'no images to delete'
+            sudo docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            sudo docker run -d $SERVICE_NAME -p 8989:8080 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
